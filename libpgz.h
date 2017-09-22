@@ -7,7 +7,11 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-int pigz(int argc, char **argv);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int pgzf(int argc, char **argv);
 
 // open a file for parallel compress
 int pgzopen(const char *path, int flags);
@@ -16,7 +20,11 @@ int pgzopen(const char *path, int flags);
 int pgzclose(int fd);
 
 // parallel compress buf, and write compressed data to fd
-int pgzwrite(void *buf, size_t size, int fd);
+int pgzwrite(int fd, const void *buf, size_t size, int more);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 

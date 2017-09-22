@@ -1,14 +1,14 @@
 CC=cc
-CFLAGS=-O3 -Wall -Wextra -fPIC
+CFLAGS=-g -O3 -Wall -Wextra -fPIC -DPGZ_MEM_SUPPORT
 LDFLAGS=
 LIBS=-lm -lpthread -lz
 ZOPFLI=zopfli/src/zopfli/
 # use gcc and gmake on Solaris
 
-libpigz: pigz.o yarn.o try.o ${ZOPFLI}deflate.o ${ZOPFLI}blocksplitter.o ${ZOPFLI}tree.o ${ZOPFLI}lz77.o ${ZOPFLI}cache.o ${ZOPFLI}hash.o ${ZOPFLI}util.o ${ZOPFLI}squeeze.o ${ZOPFLI}katajainen.o
-	$(CC) $(LDFLAGS) -shared -o libpigz.so $^ $(LIBS)
+libpgz: libpgz.o yarn.o try.o ${ZOPFLI}deflate.o ${ZOPFLI}blocksplitter.o ${ZOPFLI}tree.o ${ZOPFLI}lz77.o ${ZOPFLI}cache.o ${ZOPFLI}hash.o ${ZOPFLI}util.o ${ZOPFLI}squeeze.o ${ZOPFLI}katajainen.o
+	$(CC) $(LDFLAGS) -shared -o libpgz.so $^ $(LIBS)
 
-pigz.o: pigz.c yarn.h try.h ${ZOPFLI}deflate.h ${ZOPFLI}util.h
+libpgz.o: libpgz.c yarn.h try.h ${ZOPFLI}deflate.h ${ZOPFLI}util.h
 
 yarn.o: yarn.c yarn.h
 
@@ -32,8 +32,5 @@ ${ZOPFLI}squeeze.o: ${ZOPFLI}squeeze.c ${ZOPFLI}squeeze.h ${ZOPFLI}blocksplitter
 
 ${ZOPFLI}katajainen.o: ${ZOPFLI}katajainen.c ${ZOPFLI}katajainen.h
 
-yarnt.o: yarn.c yarn.h
-	$(CC) $(CFLAGS) -DDEBUG -g -c -o yarnt.o yarn.c
-
 clean:
-	@rm -f *.o ${ZOPFLI}*.o libpigz.so 
+	@rm -f *.o ${ZOPFLI}*.o *.so 

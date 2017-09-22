@@ -485,61 +485,85 @@
 /* input buffer size */
 #define BUF 32768U
 
+#ifdef PGZ_MEM_SUPPORT 
+
+struct tailer {
+    unsigned long head;             /* header length */
+    unsigned long ulen;             /* total uncompressed size (overflow ok) */
+    unsigned long clen;             /* total compressed size (overflow ok) */
+    unsigned long check;            /* check value of uncompressed data */
+} t;
+
+//#define PGZ_DEBUG
+#ifdef PGZ_DEBUG
+#define pgz_debug(fmt, args...)		{printf(fmt, ##args); fflush(stdout);}
+#else
+#define pgz_debug(fmt, args...)
+#endif
+
+int more_pgzwrite = 0;
+
+#endif
+
 /* globals (modified by main thread only when it's the only thread) */
-local struct {
-    char *prog;             /* name by which pigz was invoked */
-    int ind;                /* input file descriptor */
-    int outd;               /* output file descriptor */
-    char *inf;              /* input file name (allocated) */
-    size_t inz;             /* input file name allocated size */
-    char *outf;             /* output file name (allocated) */
-    int verbosity;          /* 0 = quiet, 1 = normal, 2 = verbose, 3 = trace */
-    int headis;             /* 1 to store name, 2 to store date, 3 both */
-    int pipeout;            /* write output to stdout even if file */
-    int keep;               /* true to prevent deletion of input file */
-    int force;              /* true to overwrite, compress links, cat */
-    int form;               /* gzip = 0, zlib = 1, zip = 2 or 3 */
-    unsigned char magic1;   /* first byte of possible header when decoding */
-    int recurse;            /* true to dive down into directory structure */
-    char *sufx;             /* suffix to use (".gz" or user supplied) */
-    char *name;             /* name for gzip header */
-    time_t mtime;           /* time stamp from input file for gzip header */
-    int list;               /* true to list files instead of compress */
-    int first;              /* true if we need to print listing header */
-    int decode;             /* 0 to compress, 1 to decompress, 2 to test */
-    int level;              /* compression level */
-    ZopfliOptions zopts;    /* zopfli compression options */
-    int rsync;              /* true for rsync blocking */
-    int procs;              /* maximum number of compression threads (>= 1) */
-    int setdict;            /* true to initialize dictionary in each thread */
-    size_t block;           /* uncompressed input size per thread (>= 32K) */
+ local struct {
+	 char *prog;             /* name by which pigz was invoked */
+	 int ind;                /* input file descriptor */
+	 int outd;               /* output file descriptor */
+	 char *inf;              /* input file name (allocated) */
+	 size_t inz;             /* input file name allocated size */
+	 char *outf;             /* output file name (allocated) */
+	 int verbosity;          /* 0 = quiet, 1 = normal, 2 = verbose, 3 = trace */
+	 int headis;             /* 1 to store name, 2 to store date, 3 both */
+	 int pipeout;            /* write output to stdout even if file */
+	 int keep;               /* true to prevent deletion of input file */
+	 int force;              /* true to overwrite, compress links, cat */
+	 int form;               /* gzip = 0, zlib = 1, zip = 2 or 3 */
+	 unsigned char magic1;   /* first byte of possible header when decoding */
+	 int recurse;            /* true to dive down into directory structure */
+	 char *sufx;             /* suffix to use (".gz" or user supplied) */
+	 char *name;             /* name for gzip header */
+	 time_t mtime;           /* time stamp from input file for gzip header */
+	 int list;               /* true to list files instead of compress */
+	 int first;              /* true if we need to print listing header */
+	 int decode;             /* 0 to compress, 1 to decompress, 2 to test */
+	 int level;              /* compression level */
+	 ZopfliOptions zopts;    /* zopfli compression options */
+	 int rsync;              /* true for rsync blocking */
+	 int procs;              /* maximum number of compression threads (>= 1) */
+	 int setdict;            /* true to initialize dictionary in each thread */
+	 size_t block;           /* uncompressed input size per thread (>= 32K) */
 
-    /* saved gzip/zip header data for decompression, testing, and listing */
-    time_t stamp;               /* time stamp from gzip header */
-    char *hname;                /* name from header (allocated) */
-    unsigned long zip_crc;      /* local header crc */
-    unsigned long zip_clen;     /* local header compressed length */
-    unsigned long zip_ulen;     /* local header uncompressed length */
+	 /* saved gzip/zip header data for decompression, testing, and listing */
+	 time_t stamp;               /* time stamp from gzip header */
+	 char *hname;                /* name from header (allocated) */
+	 unsigned long zip_crc;      /* local header crc */
+	 unsigned long zip_clen;     /* local header compressed length */
+	 unsigned long zip_ulen;     /* local header uncompressed length */
 
-    /* globals for decompression and listing buffered reading */
-    unsigned char in_buf[BUF];  /* input buffer */
-    unsigned char *in_next; /* next unused byte in buffer */
-    size_t in_left;         /* number of unused bytes in buffer */
-    int in_eof;             /* true if reached end of file on input */
-    int in_short;           /* true if last read didn't fill buffer */
-    off_t in_tot;           /* total bytes read from input */
-    off_t out_tot;          /* total bytes written to output */
-    unsigned long out_check;    /* check value of output */
+	 /* globals for decompression and listing buffered reading */
+	 unsigned char in_buf[BUF];  /* input buffer */
+	 unsigned char *in_next; /* next unused byte in buffer */
+	 size_t in_left;         /* number of unused bytes in buffer */
+	 int in_eof;             /* true if reached end of file on input */
+	 int in_short;           /* true if last read didn't fill buffer */
+	 off_t in_tot;           /* total bytes read from input */
+	 off_t out_tot;          /* total bytes written to output */
+	 unsigned long out_check;    /* check value of output */
 
 #ifndef NOTHREAD
-    /* globals for decompression parallel reading */
-    unsigned char in_buf2[BUF]; /* second buffer for parallel reads */
-    size_t in_len;          /* data waiting in next buffer */
-    int in_which;           /* -1: start, 0: in_buf2, 1: in_buf */
-    lock *load_state;       /* value = 0 to wait, 1 to read a buffer */
-    thread *load_thread;    /* load_read() thread for joining */
+	 /* globals for decompression parallel reading */
+	 unsigned char in_buf2[BUF]; /* second buffer for parallel reads */
+	 size_t in_len;          /* data waiting in next buffer */
+	 int in_which;           /* -1: start, 0: in_buf2, 1: in_buf */
+	 lock *load_state;       /* value = 0 to wait, 1 to read a buffer */
+	 thread *load_thread;    /* load_read() thread for joining */
 #endif
-} g;
+
+#ifdef PGZ_MEM_SUPPORT
+	unsigned long 	head;	/* output file's head length */
+#endif
+ } g;
 
 /* display a complaint with the program name on stderr */
 local int complain(char *fmt, ...)
@@ -1307,6 +1331,50 @@ local struct space *get_space(struct pool *pool)
     return space;
 }
 
+#ifdef PGZ_MEM_SUPPORT 
+/* 
+ * get a space from a pool -- the use count is initially set to one,
+ * so there is no need to call use_space() for the first use.
+ * only difference againt get_space is space->buf = NULL in this func.
+ * when parallel compress from mem and get space form in_pool, should
+ * call this function.
+ */
+local struct space *pgz_get_space(struct pool *pool)
+{
+    struct space *space;
+
+    /* if can't create any more, wait for a space to show up */
+    possess(pool->have);
+    if (pool->limit == 0)
+        wait_for(pool->have, NOT_TO_BE, 0);
+
+    /* if a space is available, pull it from the list and return it */
+    if (pool->head != NULL) {
+        space = pool->head;
+        possess(space->use);
+        pool->head = space->next;
+        twist(pool->have, BY, -1);      /* one less in pool */
+        twist(space->use, TO, 1);       /* initially one user */
+        space->len = 0;
+        return space;
+    }
+
+    /* nothing available, don't want to wait, make a new space */
+    assert(pool->limit != 0);
+    if (pool->limit > 0)
+        pool->limit--;
+    pool->made++;
+    release(pool->have);
+    space = alloc(NULL, sizeof(struct space));
+    space->use = new_lock(1);           /* initially one user */
+    space->buf = NULL; 
+    space->size = pool->size;
+    space->len = 0;
+    space->pool = pool;                 /* remember the pool this belongs to */
+    return space;
+}
+#endif
+
 /* increase the size of the buffer in space */
 local void grow_space(struct space *space)
 {
@@ -1372,6 +1440,30 @@ local int free_pool(struct pool *pool)
     free_lock(pool->have);
     return count;
 }
+
+#ifdef PGZ_MEM_SUPPORT 
+/* free the memory and lock resources of a pool -- return number of spaces for
+   debugging and resource usage measuremen. Only when parallel compress from
+  mem and free in_pool, you should call this function. */
+local int pgz_free_pool(struct pool *pool)
+{
+    int count;
+    struct space *space;
+
+    possess(pool->have);
+    count = 0;
+    while ((space = pool->head) != NULL) {
+        pool->head = space->next;
+        free_lock(space->use);
+        FREE(space);
+        count++;
+    }
+    assert(count == pool->made);
+    release(pool->have);
+    free_lock(pool->have);
+    return count;
+}
+#endif
 
 /* input and output buffer pools */
 local struct pool in_pool;
@@ -1470,6 +1562,48 @@ local void finish_jobs(void)
     free_lock(compress_have);
     compress_have = NULL;
 }
+
+#ifdef PGZ_MEM_SUPPORT 
+/* command the compress threads to all return, then join them all (call from
+   main thread), free all the thread-related resources */
+local void pgz_finish_jobs(void)
+{
+    struct job job;
+    int caught;
+
+    /* only do this once */
+    if (compress_have == NULL)
+        return;
+
+    /* command all of the extant compress threads to return */
+    possess(compress_have);
+    job.seq = -1;
+    job.next = NULL;
+    compress_head = &job;
+    compress_tail = &(job.next);
+    twist(compress_have, BY, +1);       /* will wake them all up */
+
+    /* join all of the compress threads, verify they all came back */
+    caught = join_all();
+	pgz_debug("-- joined %d compress threads\n", caught);
+    Trace(("-- joined %d compress threads", caught));
+    assert(caught == cthreads);
+    cthreads = 0;
+
+    /* free the resources */
+    caught = free_pool(&lens_pool);
+    Trace(("-- freed %d block lengths buffers", caught));
+    caught = free_pool(&dict_pool);
+    Trace(("-- freed %d dictionary buffers", caught));
+    caught = free_pool(&out_pool);
+    Trace(("-- freed %d output buffers", caught));
+    caught = pgz_free_pool(&in_pool);
+    Trace(("-- freed %d input buffers", caught));
+    free_lock(write_first);
+    free_lock(compress_have);
+    compress_have = NULL;
+}
+#endif
 
 /* compress all strm->avail_in bytes at strm->next_in to out->buf, updating
    out->len, grow the size of the buffer (out->size) if necessary -- respect
@@ -1773,7 +1907,7 @@ local void write_thread(void *dummy)
             twist(write_first, TO, write_head == NULL ? -1 : write_head->seq);
 
             /* update lengths, save uncompressed length for COMB */
-            more = job->more;
+			more = job->more;
             len = job->in->len;
             drop_space(job->in);
             ulen += (unsigned long)len;
@@ -1782,6 +1916,7 @@ local void write_thread(void *dummy)
             /* write the compressed data and drop the output buffer */
             Trace(("-- writing #%ld", seq));
             writen(g.outd, job->out->buf, job->out->len);
+
             drop_space(job->out);
             Trace(("-- wrote #%ld%s", seq, more ? "" : " (last)"));
 
@@ -3879,7 +4014,7 @@ local void defaults(void)
 #endif
     g.block = 131072UL;             /* 128K */
     g.rsync = 0;                    /* don't do rsync blocking */
-    g.setdict = 1;                  /* initialize dictionary each thread */
+    g.setdict = 0;                  /* initialize dictionary each thread */
     g.verbosity = 1;                /* normal message level */
     g.headis = 3;                   /* store/restore name and timestamp */
     g.pipeout = 0;                  /* don't force output to stdout */
@@ -3912,7 +4047,11 @@ local void new_opts(void)
 {
     single_compress(1);
 #ifndef NOTHREAD
+#ifndef PGZ_MEM_SUPPORT 
     finish_jobs();
+#else
+	pgz_finish_jobs();
+#endif
 #endif
 }
 
@@ -4095,7 +4234,7 @@ local void cut_yarn(int err)
 #endif
 
 /* Process command line arguments. */
-int pigz_from_file(int argc, char **argv)
+int pgzf(int argc, char **argv)
 {
     int n;                          /* general index */
     int noop;                       /* true to suppress option decoding */
@@ -4224,15 +4363,33 @@ int pigz_from_file(int argc, char **argv)
     return 0;
 }
 
-/* parallel compress from memory */
-int pgzwrite(int fd, const void *buf, size_t count)
+#ifdef PGZ_MEM_SUPPORT
+
+local void init_tailer(void)
 {
-#if 0
-    int n;                          /* general index */
-    int noop;                       /* true to suppress option decoding */
-    unsigned long done;             /* number of named files processed */
-    char *opts, *p;                 /* environment default options, marker */
-    ball_t err;                     /* error information from throw() */
+	t.head = 0;
+	t.ulen = 0;
+	t.clen = 0;
+	t.check = CHECK(0L, Z_NULL, 0);
+}
+
+/*
+ * parallel compress, open the output gz file
+ * and write gz file header. If all succeed,
+ * return fd(> 0), otherwise -1 is returned, 
+ * and errno is set appropriately.
+ */
+int pgzopen(const char *path, int flags)
+{
+    ball_t	err;                     /* error information from throw() */
+	struct timeval 	tv;
+
+	/*
+	 * make sure path is not NULL,
+	 * and flags is not O_RDONLY
+	 */
+	assert(path != NULL);
+	assert(flags != O_RDONLY);
 
     try {
         /* initialize globals */
@@ -4243,7 +4400,7 @@ int pgzwrite(int fd, const void *buf, size_t count)
         g.hname = NULL;
 
         /* save pointer to program name for error messages */
-        g.prog = "pigzm";
+        g.prog = "libpgz";
 
         /* prepare for interrupts and logging */
         signal(SIGINT, cut_short);
@@ -4259,83 +4416,73 @@ int pgzwrite(int fd, const void *buf, size_t count)
         /* set all options to defaults */
         defaults();
 
-        /* process user environment variable defaults in GZIP */
-        opts = getenv("GZIP");
-        if (opts != NULL) {
-            while (*opts) {
-                while (*opts == ' ' || *opts == '\t')
-                    opts++;
-                p = opts;
-                while (*p && *p != ' ' && *p != '\t')
-                    p++;
-                n = *p;
-                *p = 0;
-                if (option(opts))
-                    throw(EINVAL, "cannot provide files in "
-                                  "GZIP environment variable");
-                opts = p + (n ? 1 : 0);
-            }
-            option(NULL);
+		/* create input file
+		 * we think that the format of 
+		 * the path is xxxx.gz
+		 */
+		if (g.inf == NULL) {
+			g.inf = alloc(NULL, strlen(path) - 2);
+			strncpy(g.inf, path, strlen(path) - 3);
+		}
+		pgz_debug("g.inf = %s\n", g.inf);
+
+        /* create output file and open to write */
+		if (g.outf == NULL) {
+			g.outf = alloc(NULL, strlen(path) + 1);
+			strcpy(g.outf, path); 
+		}
+		pgz_debug("g.outf = %s\n", g.outf);
+
+        g.outd = open(g.outf, O_CREAT | O_TRUNC | O_WRONLY |
+                              (g.force ? 0 : O_EXCL), 0600);
+ 
+		/* if exists and not -f, give user a chance to overwrite */
+        if (g.outd < 0 && errno == EEXIST && isatty(0) && g.verbosity) {
+            int ch, reply;
+
+            fprintf(stderr, "%s exists -- overwrite (y/n)? ", g.outf);
+            fflush(stderr);
+            reply = -1;
+            do {
+                ch = getchar();
+                if (reply < 0 && ch != ' ' && ch != '\t')
+                    reply = ch == 'y' || ch == 'Y' ? 1 : 0;
+            } while (ch != EOF && ch != '\n' && ch != '\r');
+            if (reply == 1)
+                g.outd = open(g.outf, O_CREAT | O_TRUNC | O_WRONLY,
+                              0600);
         }
 
-        /* process user environment variable defaults in PIGZ as well */
-        opts = getenv("PIGZ");
-        if (opts != NULL) {
-            while (*opts) {
-                while (*opts == ' ' || *opts == '\t')
-                    opts++;
-                p = opts;
-                while (*p && *p != ' ' && *p != '\t')
-                    p++;
-                n = *p;
-                *p = 0;
-                if (option(opts))
-                    throw(EINVAL, "cannot provide files in "
-                                  "PIGZ environment variable");
-                opts = p + (n ? 1 : 0);
-            }
-            option(NULL);
+        /* if exists and no overwrite, report and go on to next */
+        if (g.outd < 0 && errno == EEXIST) {
+            complain("skipping: %s exists", g.outf);
+            RELEASE(g.outf);
+            RELEASE(g.hname);
+            if (g.ind != 0)
+                close(g.ind);
+            return -1;
         }
 
-        /* decompress if named "unpigz" or "gunzip", to stdout if "*cat" */
-        if (strcmp(g.prog, "unpigz") == 0 || strcmp(g.prog, "gunzip") == 0) {
-            if (!g.decode)
-                g.headis >>= 2;
-            g.decode = 1;
-        }
-        if ((n = strlen(g.prog)) > 2 && strcmp(g.prog + n - 3, "cat") == 0) {
-            if (!g.decode)
-                g.headis >>= 2;
-            g.decode = 1;
-            g.pipeout = 1;
-        }
+        /* if some other error, give up */
+        if (g.outd < 0)
+            throw(errno, "open error on %s (%s)", g.outf, strerror(errno));
+		
+        /* prepare gzip header information for compression */
+		gettimeofday(&tv, NULL);
+        g.name = g.headis & 1 ? justname(g.outf) : NULL;
+        g.mtime = g.headis & 2 ? tv.tv_sec : 0;
+		g.head = put_header();
 
-        /* process command-line arguments */
-        done = noop = 0;
-        for (n = 1; n < argc; n++)
-            /* ignore options after "--" */
-            if (noop == 0 && strcmp(argv[n], "--") == 0) {
-                noop = 1;
-                option(NULL);
-            }
-            /* process argument, interpreting if option */
-            else if (noop || option(argv[n])) {
-                /* argv[n] is a name to process */
-                if (done == 1 && g.pipeout && !g.decode && !g.list &&
-                    g.form > 1)
-                    complain("warning: output will be concatenated zip files"
-                             " -- %s will not be able to extract", g.prog);
-                process(strcmp(argv[n], "-") ? argv[n] : NULL);
-                done++;
-            }
-        option(NULL);
+		/* initialize gzip tailer information for compress */
+		init_tailer();
+		t.head = g.head;
 
-        /* list stdin or compress stdin to stdout if no file names provided */
-        if (done == 0)
-            process(NULL);
+		return g.outd;
     }
     always {
-        new_opts();
+        /* release resources */
+        RELEASE(g.inf);
+        g.inz = 0;
     }
     catch (err) {
         THREADABORT(err);
@@ -4343,6 +4490,783 @@ int pgzwrite(int fd, const void *buf, size_t count)
 
     /* show log (if any) */
     log_dump();
-#endif
-    return 0;
+	return g.outd;
 }
+
+/*
+ * parallel compress, when all compress jobs
+ * are done, write gz file tail to the output
+ * gz file and close the output gz file.
+ * pgzclose() returns zero on success.  On error, 
+ * -1 is returned, and errno is set appropriately.
+ */
+int pgzclose(int fd)
+{
+	assert(fd == g.outd);
+	assert(t.head = g.head);
+        
+	/* write trailer */
+	pgz_debug("t.ulen = %ld, t.clen = %ld, t.check = 0x%lx\n", 
+				t.ulen, t.clen, t.check);
+    put_trailer(t.ulen, t.clen, t.check, t.head);
+	
+    new_opts();
+	close(g.outd);
+	pgz_debug("g.outf = %s\n", g.outf);
+
+	RELEASE(g.outf);
+	RELEASE(g.hname);
+
+	return 0;
+}
+
+struct mem_block {
+	const void	*mptr;		// the start pointer of the memory block;
+	size_t	size;			// the size of the memory block;
+	size_t	remain;			// the remain size of the memory that aren't read
+	unsigned long	off;	// the offset to get the memory;
+} mb;
+
+/* get the next compression job from the head of the list, compress and compute
+   the check value on the input, and put a job in the write list with the
+   results -- keep looking for more jobs, returning when a job is found with a
+   sequence number of -1 (leave that job in the list for other incarnations to
+   find) */
+local void pgz_compress_thread(void *dummy)
+{
+    struct job *job;                /* job pulled and working on */
+    struct job *here, **prior;      /* pointers for inserting in write list */
+    unsigned long check;            /* check value of input */
+    unsigned char *next;            /* pointer for blocks, check value data */
+    size_t left;                    /* input left to process */
+    size_t len;                     /* remaining bytes to compress/check */
+#if ZLIB_VERNUM >= 0x1260
+    int bits;                       /* deflate pending bits */
+#endif
+    struct space *temp = NULL;      /* temporary space for zopfli input */
+    int ret;                        /* zlib return code */
+    z_stream strm;                  /* deflate stream */
+    ball_t err;                     /* error information from throw() */
+
+    (void)dummy;
+
+    try {
+        /* initialize the deflate stream for this thread */
+        strm.zfree = ZFREE;
+        strm.zalloc = ZALLOC;
+        strm.opaque = OPAQUE;
+        ret = deflateInit2(&strm, 6, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
+        if (ret == Z_MEM_ERROR)
+            throw(ENOMEM, "not enough memory");
+        if (ret != Z_OK)
+            throw(EINVAL, "internal error");
+
+        /* keep looking for work */
+        for (;;) {
+            /* get a job (like I tell my son) */
+            possess(compress_have);
+            wait_for(compress_have, NOT_TO_BE, 0);
+            job = compress_head;
+            assert(job != NULL);
+            if (job->seq == -1)
+                break;
+            compress_head = job->next;
+            if (job->next == NULL)
+                compress_tail = &compress_head;
+            twist(compress_have, BY, -1);
+
+            /* got a job -- initialize and set the compression level (note that
+               if deflateParams() is called immediately after deflateReset(),
+               there is no need to initialize input/output for the stream) */
+            Trace(("-- compressing #%ld", job->seq));
+            if (g.level <= 9) {
+                (void)deflateReset(&strm);
+                (void)deflateParams(&strm, g.level, Z_DEFAULT_STRATEGY);
+            }
+            else {
+                if (temp == NULL)
+                    temp = get_space(&out_pool);
+                temp->len = 0;
+            }
+
+            /* set dictionary if provided, release that input or dictionary
+               buffer (not NULL if g.setdict is true and if this is not the
+               first work unit) */
+            if (job->out != NULL) {
+                len = job->out->len;
+                left = len < DICT ? len : DICT;
+                if (g.level <= 9)
+                    deflateSetDictionary(&strm, job->out->buf + (len - left),
+                                         left);
+                else {
+                    memcpy(temp->buf, job->out->buf + (len - left), left);
+                    temp->len = left;
+                }
+                drop_space(job->out);
+            }
+
+            /* set up input and output */
+            job->out = get_space(&out_pool);
+            if (g.level <= 9) {
+                strm.next_in = job->in->buf;
+                strm.next_out = job->out->buf;
+            }
+            else
+                memcpy(temp->buf + temp->len, job->in->buf, job->in->len);
+
+            /* compress each block, either flushing or finishing */
+            next = job->lens == NULL ? NULL : job->lens->buf;
+            left = job->in->len;
+            job->out->len = 0;
+            do {
+                /* decode next block length from blocks list */
+                len = next == NULL ? 128 : *next++;
+                if (len < 128)                  /* 64..32831 */
+                    len = (len << 8) + (*next++) + 64;
+                else if (len == 128)            /* end of list */
+                    len = left;
+                else if (len < 192)             /* 1..63 */
+                    len &= 0x3f;
+                else if (len < 224){            /* 32832..2129983 */
+                    len = ((len & 0x1f) << 16) + (*next++ << 8);
+                    len += *next++ + 32832U;
+                }
+                else {                          /* 2129984..539000895 */
+                    len = ((len & 0x1f) << 24) + (*next++ << 16);
+                    len += *next++ << 8;
+                    len += *next++ + 2129984UL;
+                }
+                left -= len;
+
+                if (g.level <= 9) {
+                    /* run MAXP2-sized amounts of input through deflate -- this
+                       loop is needed for those cases where the unsigned type
+                       is smaller than the size_t type, or when len is close to
+                       the limit of the size_t type */
+                    while (len > MAXP2) {
+                        strm.avail_in = MAXP2;
+                        deflate_engine(&strm, job->out, Z_NO_FLUSH);
+                        len -= MAXP2;
+                    }
+
+                    /* run the last piece through deflate -- end on a byte
+                       boundary, using a sync marker if necessary, or finish
+                       the deflate stream if this is the last block */
+                    strm.avail_in = (unsigned)len;
+                    if (left || job->more || more_pgzwrite) {
+#if ZLIB_VERNUM >= 0x1260
+                        deflate_engine(&strm, job->out, Z_BLOCK);
+
+                        /* add enough empty blocks to get to a byte boundary */
+                        (void)deflatePending(&strm, Z_NULL, &bits);
+                        if ((bits & 1) || !g.setdict)
+                            deflate_engine(&strm, job->out, Z_SYNC_FLUSH);
+                        else if (bits & 7) {
+                            do {        /* add static empty blocks */
+                                bits = deflatePrime(&strm, 10, 2);
+                                assert(bits == Z_OK);
+                                (void)deflatePending(&strm, Z_NULL, &bits);
+                            } while (bits & 7);
+                            deflate_engine(&strm, job->out, Z_BLOCK);
+                        }
+#else
+                        deflate_engine(&strm, job->out, Z_SYNC_FLUSH);
+#endif
+                        if (!g.setdict)     /* two markers when independent */
+                            deflate_engine(&strm, job->out, Z_FULL_FLUSH);
+                    }
+                    else
+                        deflate_engine(&strm, job->out, Z_FINISH);
+                }
+                else {
+                    /* compress len bytes using zopfli, end at byte boundary */
+                    unsigned char bits, *out;
+                    size_t outsize;
+
+                    out = NULL;
+                    outsize = 0;
+                    bits = 0;
+                    ZopfliDeflatePart(&g.zopts, 2, !(left || job->more),
+                                      temp->buf, temp->len, temp->len + len,
+                                      &bits, &out, &outsize);
+                    assert(job->out->len + outsize + 5 <= job->out->size);
+                    memcpy(job->out->buf + job->out->len, out, outsize);
+                    free(out);
+                    job->out->len += outsize;
+                    if (left || job->more) {
+                        bits &= 7;
+                        if ((bits & 1) || !g.setdict) {
+                            if (bits == 0 || bits > 5)
+                                job->out->buf[job->out->len++] = 0;
+                            job->out->buf[job->out->len++] = 0;
+                            job->out->buf[job->out->len++] = 0;
+                            job->out->buf[job->out->len++] = 0xff;
+                            job->out->buf[job->out->len++] = 0xff;
+                        }
+                        else if (bits) {
+                            do {
+                                job->out->buf[job->out->len - 1] += 2 << bits;
+                                job->out->buf[job->out->len++] = 0;
+                                bits += 2;
+                            } while (bits < 8);
+                        }
+                        if (!g.setdict) {   /* two markers when independent */
+                            job->out->buf[job->out->len++] = 0;
+                            job->out->buf[job->out->len++] = 0;
+                            job->out->buf[job->out->len++] = 0;
+                            job->out->buf[job->out->len++] = 0xff;
+                            job->out->buf[job->out->len++] = 0xff;
+                        }
+                    }
+                    temp->len += len;
+                }
+            } while (left);
+            drop_space(job->lens);
+            job->lens = NULL;
+            Trace(("-- compressed #%ld%s", job->seq,
+                   job->more ? "" : " (last)"));
+
+            /* reserve input buffer until check value has been calculated */
+            use_space(job->in);
+
+            /* insert write job in list in sorted order, alert write thread */
+            possess(write_first);
+            prior = &write_head;
+            while ((here = *prior) != NULL) {
+                if (here->seq > job->seq)
+                    break;
+                prior = &(here->next);
+            }
+            job->next = here;
+            *prior = job;
+            twist(write_first, TO, write_head->seq);
+
+            /* calculate the check value in parallel with writing, alert the
+               write thread that the calculation is complete, and drop this
+               usage of the input buffer */
+            len = job->in->len;
+            next = job->in->buf;
+            check = CHECK(0L, Z_NULL, 0);
+            while (len > MAXP2) {
+                check = CHECK(check, next, MAXP2);
+                len -= MAXP2;
+                next += MAXP2;
+            }
+            check = CHECK(check, next, (unsigned)len);
+            drop_space(job->in);
+            job->check = check;
+            Trace(("-- checked #%ld%s", job->seq, job->more ? "" : " (last)"));
+            possess(job->calc);
+            twist(job->calc, TO, 1);
+
+            /* done with that one -- go find another job */
+        }
+
+        /* found job with seq == -1 -- return to join */
+        drop_space(temp);
+        release(compress_have);
+        (void)deflateEnd(&strm);
+    }
+    catch (err) {
+        THREADABORT(err);
+    }
+}
+
+
+/* collect the write jobs off of the list in sequence order and write out the
+   compressed data until the last chunk is written -- also write the header and
+   trailer and combine the individual check values of the input buffers */
+local void pgz_write_thread(void *dummy)
+{
+    long seq;                       /* next sequence number looking for */
+    struct job *job;                /* job pulled and working on */
+    size_t len;                     /* input length */
+    int more;                       /* true if more chunks to write */
+#if 0
+    unsigned long ulen;             /* total uncompressed size (overflow ok) */
+    unsigned long clen;             /* total compressed size (overflow ok) */
+    unsigned long check;            /* check value of uncompressed data */
+#endif 
+    ball_t err;                     /* error information from throw() */
+
+    (void)dummy;
+
+    try {
+#if 0
+        /* process output of compress threads until end of input */
+        ulen = clen = 0;
+        check = CHECK(0L, Z_NULL, 0);
+#endif
+        seq = 0;
+        do {
+            /* get next write job in order */
+            possess(write_first);
+            wait_for(write_first, TO_BE, seq);
+            job = write_head;
+            write_head = job->next;
+            twist(write_first, TO, write_head == NULL ? -1 : write_head->seq);
+
+            /* update lengths, save uncompressed length for COMB */
+           	more = job->more;
+            len = job->in->len;
+            drop_space(job->in);
+#if 0
+            ulen += (unsigned long)len;
+            clen += (unsigned long)(job->out->len);
+#else
+            t.ulen += (unsigned long)len;
+            t.clen += (unsigned long)(job->out->len);
+#endif
+
+            /* write the compressed data and drop the output buffer */
+            Trace(("-- writing #%ld", seq));
+            writen(g.outd, job->out->buf, job->out->len);
+            drop_space(job->out);
+            Trace(("-- wrote #%ld%s", seq, more ? "" : " (last)"));
+
+            /* wait for check calculation to complete, then combine, once
+               the compress thread is done with the input, release it */
+            possess(job->calc);
+            wait_for(job->calc, TO_BE, 1);
+            release(job->calc);
+#if 0
+            check = COMB(check, job->check, len);
+#else
+            t.check = COMB(t.check, job->check, len);
+#endif
+
+            /* free the job */
+            free_lock(job->calc);
+            FREE(job);
+
+            /* get the next buffer in sequence */
+            seq++;
+        } while (more);
+
+#if 0
+        /* write trailer */
+        put_trailer(ulen, clen, check, g.head);
+#endif
+
+        /* verify no more jobs, prepare for next use */
+        possess(compress_have);
+        assert(compress_head == NULL && peek_lock(compress_have) == 0);
+        release(compress_have);
+        possess(write_first);
+        assert(write_head == NULL);
+        twist(write_first, TO, -1);
+    }
+    catch (err) {
+        THREADABORT(err);
+    }
+}
+/*
+ * get a memory block that is between
+ * mb.mptr and (mb.mptr + size)
+ */ 
+local size_t get_mem(unsigned char **buf, size_t len)
+{
+    size_t got;
+
+	assert(mb.off <= mb.size);
+	
+	got = 0;
+	if (mb.off == mb.size) 
+		return got;
+
+	if (len <= mb.remain)
+		got = len;
+	else
+		got = mb.remain;
+
+	*buf = (unsigned char *)(mb.mptr + mb.off);
+	mb.remain -= got;
+	mb.off += got;
+
+    return got;
+}
+
+#ifndef NOTHREAD
+/* compress ind to outd, using multiple threads for the compression and check
+   value calculations and one other thread for writing the output -- compress
+   threads will be launched and left running (waiting actually) to support
+   subsequent calls of parallel_compress() */
+local void pgz_parallel_compress(void)
+{
+    long seq;                  		/* sequence number */
+    struct space *curr;             /* input data to compress */
+    struct space *next;             /* input data that follows curr */
+    struct space *hold;             /* input data that follows next */
+    struct space *dict;            	/* dictionary for next compression */
+    struct job *job;               	/* job for compress, then write */
+    int more;                      	/* true if more input to read */
+    size_t len;                    	/* for various length computations */
+
+    /* if first time or after an option change, setup the job lists */
+    setup_jobs();
+
+    /* start write thread */
+	pgz_debug("launch pgz_write_thread\n");
+    writeth = launch(pgz_write_thread, NULL);
+
+    /* read from input and start compress threads (write thread will pick up
+       the output of the compress threads) */
+    seq = 0;
+    next = pgz_get_space(&in_pool);
+    next->len = get_mem(&next->buf, next->size);
+    hold = NULL;
+    dict = NULL;
+    do {
+        /* create a new job */
+        job = alloc(NULL, sizeof(struct job));
+        job->calc = new_lock(0);
+
+        /* update input spaces */
+        curr = next;
+        next = hold;
+        hold = NULL;
+
+        /* get more input if we don't already have some */
+        if (next == NULL) {
+            next = pgz_get_space(&in_pool);
+            next->len = get_mem(&next->buf, next->size);
+        }
+
+        /* compress curr->buf to curr->len -- compress thread will drop curr */
+        job->in = curr;
+
+        /* set job->more if there is more to compress after curr */
+        more = next->len != 0;
+       	job->more = more;
+
+        /* provide dictionary for this job, prepare dictionary for next job */
+        job->out = dict;
+        if (more && g.setdict) {
+            if (curr->len >= DICT || job->out == NULL) {
+                dict = curr;
+                use_space(dict);
+            }
+            else {
+                dict = get_space(&dict_pool);
+                len = DICT - curr->len;
+                memcpy(dict->buf, job->out->buf + (job->out->len - len), len);
+                memcpy(dict->buf + len, curr->buf, curr->len);
+                dict->len = DICT;
+            }
+        }
+
+        /* preparation of job is complete */
+        job->seq = seq;
+        Trace(("-- read #%ld%s", seq, more ? "" : " (last)"));
+        if (++seq < 1)
+            throw(ERANGE, "overflow");
+
+        /* start another compress thread if needed */
+        if (cthreads < seq && cthreads < g.procs) {
+            (void)launch(pgz_compress_thread, NULL);
+            cthreads++;
+        }
+
+        /* put job at end of compress list, let all the compressors know */
+        possess(compress_have);
+        job->next = NULL;
+        *compress_tail = job;
+        compress_tail = &(job->next);
+        twist(compress_have, BY, +1);
+    } while (more);
+    drop_space(next);
+
+    /* wait for the write thread to complete (we leave the compress threads out
+       there and waiting in case there is another stream to compress) */
+    join(writeth);
+    writeth = NULL;
+    pgz_debug("-- write thread joined\n");
+}
+#endif
+
+/* do a simple compression in a single thread from ind to outd -- if reset is
+   true, instead free the memory that was allocated and retained for input,
+   output, and deflate */
+local void pgz_single_compress(int reset)
+{
+    size_t got;                     /* amount of data in in[] */
+    size_t more;                    /* amount of data in next[] (0 if eof) */
+    size_t start;                   /* start of data in next[] */
+    size_t have;                    /* bytes in current block for -i */
+    size_t hist;                    /* offset of permitted history */
+    int fresh;                      /* if true, reset compression history */
+    unsigned hash;                  /* hash for rsyncable */
+    unsigned char *scan;            /* pointer for hash computation */
+    size_t left;                    /* bytes left to compress after hash hit */
+    unsigned long head;             /* header length */
+    unsigned long ulen;             /* total uncompressed size (overflow ok) */
+    unsigned long clen;             /* total compressed size (overflow ok) */
+    unsigned long check;            /* check value of uncompressed data */
+    static unsigned out_size;       /* size of output buffer */
+    static unsigned char *in, *next, *out;  /* reused i/o buffers */
+    static z_stream *strm = NULL;   /* reused deflate structure */
+
+    /* if requested, just release the allocations and return */
+    if (reset) {
+        if (strm != NULL) {
+            (void)deflateEnd(strm);
+            FREE(strm);
+            FREE(out);
+            FREE(next);
+            FREE(in);
+            strm = NULL;
+        }
+        return;
+    }
+
+    /* initialize the deflate structure if this is the first time */
+    if (strm == NULL) {
+        int ret;                    /* zlib return code */
+
+        out_size = g.block > MAXP2 ? MAXP2 : (unsigned)g.block;
+        in = alloc(NULL, g.block + DICT);
+        next = alloc(NULL, g.block + DICT);
+        out = alloc(NULL, out_size);
+        strm = alloc(NULL, sizeof(z_stream));
+        strm->zfree = ZFREE;
+        strm->zalloc = ZALLOC;
+        strm->opaque = OPAQUE;
+        ret = deflateInit2(strm, 6, Z_DEFLATED, -15, 8, Z_DEFAULT_STRATEGY);
+        if (ret == Z_MEM_ERROR)
+            throw(ENOMEM, "not enough memory");
+        if (ret != Z_OK)
+            throw(EINVAL, "internal error");
+    }
+
+    /* write header */
+    head = put_header();
+
+    /* set compression level in case it changed */
+    if (g.level <= 9) {
+        (void)deflateReset(strm);
+        (void)deflateParams(strm, g.level, Z_DEFAULT_STRATEGY);
+    }
+
+    /* do raw deflate and calculate check value */
+    got = 0;
+    more = readn(g.ind, next, g.block);
+    ulen = (unsigned long)more;
+    start = 0;
+    hist = 0;
+    clen = 0;
+    have = 0;
+    check = CHECK(0L, Z_NULL, 0);
+    hash = RSYNCHIT;
+    do {
+        /* get data to compress, see if there is any more input */
+        if (got == 0) {
+            scan = in;  in = next;  next = scan;
+            strm->next_in = in + start;
+            got = more;
+            if (g.level > 9) {
+                left = start + more - hist;
+                if (left > DICT)
+                    left = DICT;
+                memcpy(next, in + ((start + more) - left), left);
+                start = left;
+                hist = 0;
+            }
+            else
+                start = 0;
+            more = readn(g.ind, next + start, g.block);
+            ulen += (unsigned long)more;
+        }
+
+        /* if rsyncable, compute hash until a hit or the end of the block */
+        left = 0;
+        if (g.rsync && got) {
+            scan = strm->next_in;
+            left = got;
+            do {
+                if (left == 0) {
+                    /* went to the end -- if no more or no hit in size bytes,
+                       then proceed to do a flush or finish with got bytes */
+                    if (more == 0 || got == g.block)
+                        break;
+
+                    /* fill in[] with what's left there and as much as possible
+                       from next[] -- set up to continue hash hit search */
+                    if (g.level > 9) {
+                        left = (strm->next_in - in) - hist;
+                        if (left > DICT)
+                            left = DICT;
+                    }
+                    memmove(in, strm->next_in - left, left + got);
+                    hist = 0;
+                    strm->next_in = in + left;
+                    scan = in + left + got;
+                    left = more > g.block - got ? g.block - got : more;
+                    memcpy(scan, next + start, left);
+                    got += left;
+                    more -= left;
+                    start += left;
+
+                    /* if that emptied the next buffer, try to refill it */
+                    if (more == 0) {
+                        more = readn(g.ind, next, g.block);
+                        ulen += (unsigned long)more;
+                        start = 0;
+                    }
+                }
+                left--;
+                hash = ((hash << 1) ^ *scan++) & RSYNCMASK;
+            } while (hash != RSYNCHIT);
+            got -= left;
+        }
+
+        /* clear history for --independent option */
+        fresh = 0;
+        if (!g.setdict) {
+            have += got;
+            if (have > g.block) {
+                fresh = 1;
+                have = got;
+            }
+        }
+
+        if (g.level <= 9) {
+            /* clear history if requested */
+            if (fresh)
+                (void)deflateReset(strm);
+
+            /* compress MAXP2-size chunks in case unsigned type is small */
+            while (got > MAXP2) {
+                strm->avail_in = MAXP2;
+                check = CHECK(check, strm->next_in, strm->avail_in);
+                DEFLATE_WRITE(Z_NO_FLUSH);
+                got -= MAXP2;
+            }
+
+            /* compress the remainder, emit a block, finish if end of input */
+            strm->avail_in = (unsigned)got;
+            got = left;
+            check = CHECK(check, strm->next_in, strm->avail_in);
+            if (more || got) {
+#if ZLIB_VERNUM >= 0x1260
+                int bits;
+
+                DEFLATE_WRITE(Z_BLOCK);
+                (void)deflatePending(strm, Z_NULL, &bits);
+                if ((bits & 1) || !g.setdict)
+                    DEFLATE_WRITE(Z_SYNC_FLUSH);
+                else if (bits & 7) {
+                    do {
+                        bits = deflatePrime(strm, 10, 2);
+                        assert(bits == Z_OK);
+                        (void)deflatePending(strm, Z_NULL, &bits);
+                    } while (bits & 7);
+                    DEFLATE_WRITE(Z_NO_FLUSH);
+                }
+#else
+                DEFLATE_WRITE(Z_SYNC_FLUSH);
+#endif
+                if (!g.setdict)             /* two markers when independent */
+                    DEFLATE_WRITE(Z_FULL_FLUSH);
+            }
+            else
+                DEFLATE_WRITE(Z_FINISH);
+        }
+        else {
+            /* compress got bytes using zopfli, bring to byte boundary */
+            unsigned char bits, *out;
+            size_t outsize, off;
+
+            /* discard history if requested */
+            off = strm->next_in - in;
+            if (fresh)
+                hist = off;
+
+            out = NULL;
+            outsize = 0;
+            bits = 0;
+            ZopfliDeflatePart(&g.zopts, 2, !(more || left),
+                              in + hist, off - hist, (off - hist) + got,
+                              &bits, &out, &outsize);
+            bits &= 7;
+            if (more || left) {
+                if ((bits & 1) || !g.setdict) {
+                    writen(g.outd, out, outsize);
+                    if (bits == 0 || bits > 5)
+                        writen(g.outd, (unsigned char *)"\0", 1);
+                    writen(g.outd, (unsigned char *)"\0\0\xff\xff", 4);
+                }
+                else {
+                    assert(outsize > 0);
+                    writen(g.outd, out, outsize - 1);
+                    if (bits)
+                        do {
+                            out[outsize - 1] += 2 << bits;
+                            writen(g.outd, out + outsize - 1, 1);
+                            out[outsize - 1] = 0;
+                            bits += 2;
+                        } while (bits < 8);
+                    writen(g.outd, out + outsize - 1, 1);
+                }
+                if (!g.setdict)             /* two markers when independent */
+                    writen(g.outd, (unsigned char *)"\0\0\0\xff\xff", 5);
+            }
+            else
+                writen(g.outd, out, outsize);
+            free(out);
+            while (got > MAXP2) {
+                check = CHECK(check, strm->next_in, MAXP2);
+                strm->next_in += MAXP2;
+                got -= MAXP2;
+            }
+            check = CHECK(check, strm->next_in, (unsigned)got);
+            strm->next_in += got;
+            got = left;
+        }
+
+        /* do until no more input */
+    } while (more || got);
+
+    /* write trailer */
+    put_trailer(ulen, clen, check, head);
+}
+
+void init_mem_block(const void *buf, size_t count)
+{
+	mb.mptr = buf;
+	mb.size = count;
+	mb.remain = mb.size;
+	mb.off = 0;
+}
+
+/* parallel compress from memory */
+int pgzwrite(int fd, const void *buf, size_t count, int more)
+{
+	/*
+	 * make sure that the fd given by user 
+	 * is equal to g.outd. g.outd is stored
+	 * when the user open the output file by
+	 * calling pgzopen.
+	 */
+	assert(fd == g.outd);
+
+	/*
+	 * initialize memory block struct
+	 */
+	init_mem_block(buf, count);
+
+	more_pgzwrite = more;
+
+#ifndef NOTHREAD
+	if (g.procs > 1)
+		pgz_parallel_compress();
+	else
+		pgz_single_compress(0);
+#else
+	pgz_single_compress(0);
+#endif
+
+	new_opts();
+	return 0;
+}
+
+#endif 		// PGZ_MEM_SUPPORT
